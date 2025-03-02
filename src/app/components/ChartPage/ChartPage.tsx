@@ -1,6 +1,5 @@
 'use client';
 
-import React, { useState } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -12,7 +11,10 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import Papa from 'papaparse';
+
+import { useChartPage } from './hooks/useChartPage';
+
+import DownloadCsv from '../DownloadCsv/DownloadCsv';
 
 // Here I'm registering the Chart.js components that I'll be using in my chart.
 // This includes the X/Y scales, the line element, and so on.
@@ -26,59 +28,13 @@ ChartJS.register(
   Legend
 );
 
-// This type matches the data I'm receiving from the server side.
-type DataPoint = {
-  date: string;
-  mark: number;
-  athlete: string;
-  venue: string;
-};
-
 export const ChartPage = () => {
-  // wikiUrl holds the user-input URL. dataPoints will store the array of scraped rows.
-  const [wikiUrl, setWikiUrl] = useState('');
-  const [dataPoints, setDataPoints] = useState<DataPoint[]>([]);
-
-  // This "wow feature" is a CSV download. I use Papa.parse to convert the array of
-  // objects into CSV text, then trigger a download in the browser.
-  const handleDownloadCSV = () => {
-    const csv = Papa.unparse(dataPoints);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'high_jump_data.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // When the user clicks "Scrape," I call my /api/scrape endpoint
-  // passing in the wikiUrl as a query param. If it's successful,
-  // I log the data to the console and then store it in state.
-  const handleScrape = async () => {
-    if (!wikiUrl) return;
-
-    try {
-      const res = await fetch(`/api/scrape?url=${encodeURIComponent(wikiUrl)}`);
-      if (!res.ok) {
-        console.error('Failed to scrape the page');
-        return;
-      }
-      const jsonData = await res.json();
-
-      // I'm printing the entire JSON response to the console so I can see the results.
-      console.log('Scraped data:', jsonData);
-
-      // If the response has a "data" property, that's my array of DataPoint objects.
-      if (jsonData.data) {
-        setDataPoints(jsonData.data);
-      }
-    } catch (error) {
-      console.error('Error while scraping:', error);
-    }
-  };
+  const {
+    wikiUrl,
+    setWikiUrl,
+    dataPoints,
+    handleScrape,
+  } = useChartPage();
 
   // Here I'm setting up the chart data to be displayed by react-chartjs-2.
   // I use the date strings as the labels along the X-axis and the numeric
@@ -142,14 +98,7 @@ export const ChartPage = () => {
 
       {/* If there's data, I'll show the CSV download button. Otherwise, it remains hidden. */}
       {dataPoints.length > 0 && (
-        <div className="mb-4">
-          <button
-            onClick={handleDownloadCSV}
-            className="bg-green-500 text-white px-4 py-2 rounded-md"
-          >
-            Download CSV
-          </button>
-        </div>
+        <DownloadCsv dataPoints={dataPoints} />
       )}
 
       {/* Conditionally render the chart if there's data. Otherwise, show a friendly message. */}

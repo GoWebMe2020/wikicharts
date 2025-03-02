@@ -1,14 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
 
-// I'm defining a TypeScript interface for the data I'm expecting from each table row.
-// Each row should have a date, the numeric mark in meters, the athlete's name, and the venue.
-type ScrapedData = {
-  date: string;   // e.g. "1922-06-21" or something close
-  mark: number;   // numeric height in meters
-  athlete: string;
-  venue: string;
-};
+import type { DataPoint } from '../../lib/models/DataPoint'
 
 export const GET = async (request: NextRequest) => {
   try {
@@ -48,7 +41,7 @@ export const GET = async (request: NextRequest) => {
     const table = $('table.wikitable').first();
 
     // I'll accumulate all the valid rows into this array.
-    const result: ScrapedData[] = [];
+    const result: DataPoint[] = [];
 
     // I use Cheerio to find each table row (tr) inside the table.
     table.find('tr').each((i, row) => {
@@ -94,7 +87,7 @@ export const GET = async (request: NextRequest) => {
 
     // Finally, I return the scraped data as JSON. This will be consumed by the client side.
     return NextResponse.json({ data: result }, { status: 200 });
-  } catch (err: any) {
+  } catch (err: unknown) {
     // If something unexpected happens, I log it and respond with an error message.
     console.error('Scraping error:', err);
     return NextResponse.json(
@@ -102,4 +95,4 @@ export const GET = async (request: NextRequest) => {
       { status: 500 }
     );
   }
-}
+};

@@ -1,5 +1,5 @@
 import React from 'react';
-import ChartPage from './ChartPage';
+import ChartPage from './components/ChartPage/ChartPage';
 
 // This is my main page in the Next.js App Router. It imports and renders
 // the ChartPage component, which is a Client Component that handles
