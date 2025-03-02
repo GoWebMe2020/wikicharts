@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as cheerio from 'cheerio';
+import { Element } from 'domhandler';
 
-import type { DataPoint } from '../../lib/models/DataPoint'
+import type { DataPoint } from '../../lib/models/DataPoint';
 
 export const GET = async (request: NextRequest) => {
   try {
-    // First, I extract the "url" query parameter from the request URL.
-    // This is the Wikipedia URL that I'll scrape.
+    // I start by grabbing the "url" query parameter, which should hold the Wikipedia page URL.
     const { searchParams } = new URL(request.url);
     const wikiUrl = searchParams.get('url');
 
-    // If there's no "url" query parameter, I return a 400 error so the client
-    // knows they made a bad request.
     if (!wikiUrl) {
       return NextResponse.json(
         { error: 'Missing "url" query parameter' },
@@ -19,8 +17,8 @@ export const GET = async (request: NextRequest) => {
       );
     }
 
-    // Now I fetch the HTML from the provided Wikipedia URL.
-    // If the fetch fails (like a 404 or 500), I throw a 500 error back.
+    // Next, I fetch the HTML of the provided Wikipedia URL.
+    // If something goes wrong (like a 404), I'll return a 500 error to the client.
     const response = await fetch(wikiUrl);
     if (!response.ok) {
       return NextResponse.json(
@@ -29,52 +27,106 @@ export const GET = async (request: NextRequest) => {
       );
     }
 
-    // Then, I read the entire HTML response as text so I can parse it with Cheerio.
+    // Load the entire HTML response into Cheerio so I can parse it like a DOM.
     const html = await response.text();
-
-    // I load the HTML into Cheerio so I can use jQuery-like syntax to query the DOM.
     const $ = cheerio.load(html);
 
-    // I look for the first table with the class "wikitable".
-    // For this project, I'm assuming that's the table I want.
-    // If there are multiple, I'd need more sophisticated logic.
-    const table = $('table.wikitable').first();
+    // I gather all "wikitable" tables on this page. Some pages have multiple,
+    // and I only want the one that gives me the most valid data rows.
+    const allTables = $('table.wikitable');
 
-    // I'll accumulate all the valid rows into this array.
-    const result: DataPoint[] = [];
+    // I track which table yields the "best" (i.e., largest) dataset of valid rows.
+    let bestData: DataPoint[] = [];
 
-    // I use Cheerio to find each table row (tr) inside the table.
-    table.find('tr').each((i, row) => {
-      // I'll keep track of each column's text here before I parse them.
-      let markVal = '';
-      let athleteVal = '';
-      let dateVal = '';
-      let venueVal = '';
+    // Go through each wikitable, parse it, and see if it returns more rows than our current best.
+    allTables.each((_, tableEl) => {
+      const currentResult = parseTable($, tableEl);
 
-      // Each table row has multiple columns (td). I'm expecting at least 4 here.
-      // The order matters: Mark, Athlete, Date, Venue.
-      const cells = $(row).find('td');
+      // If this table’s result is bigger, I update bestData to match this one.
+      if (currentResult.length > bestData.length) {
+        bestData = currentResult;
+      }
+    });
 
-      if (cells.length >= 4) {
-        markVal = $(cells[0]).text().trim();
-        athleteVal = $(cells[1]).text().trim();
-        dateVal = $(cells[2]).text().trim();
-        venueVal = $(cells[3]).text().trim();
+    // After checking all tables, I return the data from the one with the most valid rows.
+    return NextResponse.json({ data: bestData }, { status: 200 });
+
+  } catch (err: unknown) {
+    // In case of an unexpected issue, I'll log it and send back a 500 status code.
+    console.error('Scraping error:', err);
+    return NextResponse.json(
+      { error: 'An error occurred' },
+      { status: 500 }
+    );
+  }
+};
+
+/**
+ * parseTable($, tableEl):
+ *  - Finds the table's header cells to locate the correct columns for Mark, Athlete, Date, and Venue.
+ *  - Loops over each row, reads the right cell for each property (based on header text),
+ *    and tries to build a valid DataPoint if everything matches up.
+ */
+const parseTable = ($: cheerio.CheerioAPI, tableEl: Element): DataPoint[] => {
+  const result: DataPoint[] = [];
+
+  // First, I grab the header row to figure out which column is Mark, Athlete, Date, and Venue.
+  const headerRow = $(tableEl).find('tr').first();
+  const headerCells = headerRow.find('th');
+
+  // This object will map each column name (lowercase) to its index, e.g. "mark": 0, "athlete": 1, etc.
+  const headerMap: Record<string, number> = {};
+
+  headerCells.each((i, th) => {
+    const headerText = $(th).text().trim().toLowerCase();
+    // I'm checking if each header includes specific keywords. You can adjust if needed.
+    if (headerText.includes('mark')) {
+      headerMap['mark'] = i;
+    } else if (headerText.includes('athlete')) {
+      headerMap['athlete'] = i;
+    } else if (headerText.includes('date')) {
+      headerMap['date'] = i;
+    } else if (headerText.includes('venue')) {
+      headerMap['venue'] = i;
+    }
+  });
+
+  // Now I skip the header row and process all subsequent rows in the table.
+  $(tableEl)
+    .find('tr')
+    .slice(1)
+    .each((_, row) => {
+      // Identify which columns correspond to each property.
+      const markIndex = headerMap['mark'];
+      const athleteIndex = headerMap['athlete'];
+      const dateIndex = headerMap['date'];
+      const venueIndex = headerMap['venue'];
+
+      // If any are missing, this row won't parse properly, so I skip it.
+      if (
+        markIndex === undefined ||
+        athleteIndex === undefined ||
+        dateIndex === undefined ||
+        venueIndex === undefined
+      ) {
+        return;
       }
 
-      // Marks typically look like "1.46 m (4 ft 9+1⁄4 in)".
-      // I use a regex to grab the numeric portion before the 'm'.
+      // Pull out the cells using the discovered column indices.
+      const cells = $(row).find('td');
+      const markVal = $(cells[markIndex]).text().trim();
+      const athleteVal = $(cells[athleteIndex]).text().trim();
+      const dateVal = $(cells[dateIndex]).text().trim();
+      const venueVal = $(cells[venueIndex]).text().trim();
+
+      // For the mark, I parse out the numeric portion from something like "2.06 m (6 ft 9 in)".
       const match = markVal.match(/([\d.]+)/);
       let numericMark = 0;
       if (match) {
         numericMark = parseFloat(match[1]);
       }
 
-      // Because the date can have different formats, I simply store the string
-      // for now, though I could parse it further if needed.
-
-      // I only add this row to the final array if the mark is valid (above 0)
-      // and I have text for athlete, date, and venue.
+      // Only add a row if I have a positive mark and non-empty strings for the other fields.
       if (numericMark > 0 && athleteVal && dateVal && venueVal) {
         result.push({
           date: dateVal,
@@ -85,14 +137,5 @@ export const GET = async (request: NextRequest) => {
       }
     });
 
-    // Finally, I return the scraped data as JSON. This will be consumed by the client side.
-    return NextResponse.json({ data: result }, { status: 200 });
-  } catch (err: unknown) {
-    // If something unexpected happens, I log it and respond with an error message.
-    console.error('Scraping error:', err);
-    return NextResponse.json(
-      { error: 'An error occurred' },
-      { status: 500 }
-    );
-  }
+  return result;
 };

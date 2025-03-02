@@ -49,14 +49,18 @@ export const ChartPage = () => {
     ],
   };
 
-  // Simple options for the chart. I'm adding a title, and
+  const chartTitle = dataPoints.length
+    ? `Scraped ${dataPoints.length} records!`
+    : 'Waiting for data...';
+
+  // Simple options for the chart. I'm adding a dynamic title using chartTitle, and
   // naming the X/Y axes for clarity.
   const chartOptions = {
     responsive: true,
     plugins: {
       title: {
         display: true,
-        text: 'Women’s High Jump World Record Progression',
+        text: chartTitle,
       },
     },
     scales: {
@@ -103,12 +107,7 @@ export const ChartPage = () => {
 
       {/* Conditionally render the chart if there's data. Otherwise, show a friendly message. */}
       {dataPoints.length > 0 ? (
-        <>
-          <p className="mb-2">
-            Showing {dataPoints.length} records from the table
-          </p>
-          <Line data={chartData} options={chartOptions} />
-        </>
+        <Line data={chartData} options={chartOptions} />
       ) : (
         <p>No data yet. Enter a URL and click “Scrape.”</p>
       )}
